@@ -8,7 +8,7 @@ import os
 nltk.download("punkt")
 from langchain.embeddings import HuggingFaceEndpointEmbeddings
 
-embeddings = HuggingFaceEndpointEmbeddings(
+embedder = HuggingFaceEndpointEmbeddings(
     model="sentence-transformers/all-mpnet-base-v2",
     huggingfacehub_api_token=os.getenv("HF_TOKEN")
 )

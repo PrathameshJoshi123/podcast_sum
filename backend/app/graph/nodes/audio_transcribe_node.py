@@ -3,8 +3,6 @@ import json
 import os
 from app.model.state import InterviewState
 
-os.environ["PATH"] = r"D:\My_Space\Podcast_Summarizer\cudnn\bin;" + os.environ["PATH"]
-os.add_dll_directory(r"D:\My_Space\Podcast_Summarizer\cudnn\bin")
 
 def transcribe_audio(file_path: str) -> str:
     print(file_path)
@@ -13,7 +11,7 @@ def transcribe_audio(file_path: str) -> str:
         model_identifier="small",
         backend="CTranslate2",
         compute_type="int8",
-        device="cuda"  # Change to "cpu" if no GPU
+        device="cpu"  # Change to "cpu" if no GPU
     )
     # Prepare file list and parameters
     files = [f"{file_path}"]

@@ -3,9 +3,6 @@ import json
 import os
 from app.model.state import InterviewState
 
-os.environ["PATH"] = r"D:\My_Space\Podcast_Summarizer\cudnn\bin;" + os.environ["PATH"]
-os.add_dll_directory(r"D:\My_Space\Podcast_Summarizer\cudnn\bin")
-
 def transcribe_audio(file_path: str) -> str:
     print(file_path)
     # Load the model once globally

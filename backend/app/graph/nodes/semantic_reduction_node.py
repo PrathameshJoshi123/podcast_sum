@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 load_dotenv()
 import os
 nltk.download("punkt")
-from langchain.embeddings import HuggingFaceEndpointEmbeddings
+from langchain_huggingface import HuggingFaceEndpointEmbeddings
 
 embedder = HuggingFaceEndpointEmbeddings(
     model="sentence-transformers/all-mpnet-base-v2",

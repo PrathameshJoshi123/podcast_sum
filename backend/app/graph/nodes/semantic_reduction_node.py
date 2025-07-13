@@ -2,9 +2,16 @@ import nltk
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
-
+from dotenv import load_dotenv
+load_dotenv()
+import os
 nltk.download("punkt")
-embedder = SentenceTransformer("all-mpnet-base-v2")
+from langchain.embeddings import HuggingFaceEndpointEmbeddings
+
+embeddings = HuggingFaceEndpointEmbeddings(
+    model="sentence-transformers/all-mpnet-base-v2",
+    huggingfacehub_api_token=os.getenv("HF_TOKEN")
+)
 
 def hybrid_chunk(text, min_words=100, max_words=300):
     """Segment text by semantic shifts and approximate word count."""

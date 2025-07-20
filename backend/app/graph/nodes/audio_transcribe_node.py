@@ -53,9 +53,9 @@ def transcribe_audio(file_path: str) -> str:
 
 # LangGraph node function
 def audio_transcribe_node(state: InterviewState) -> InterviewState:
-    if not state.audio_file_path or state.source_link_or_path:
-        print(state.audio_file_path)
-        raise ValueError("Audio file path not provided")
+    # if not state.audio_file_path or state.source_link_or_path:
+    #     print(state.audio_file_path)
+    #     raise ValueError("Audio file path not provided")
 
     try:
         if state.source_type == "youtube":

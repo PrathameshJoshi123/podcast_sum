@@ -31,9 +31,9 @@ if input_method == "YouTube link":
                     st.subheader("✅ Global Summary")
                     st.write(data["global_summary"])
                     
-                    st.subheader("💬 Representative Sentences")
-                    for rep in data["rep"]:
-                        st.write(f"- {rep}")
+                    # st.subheader("💬 Representative Sentences")
+                    # for rep in data["rep"]:
+                    #     st.write(f"- {rep}")
                     
                     st.subheader("📄 QA Pairs")
                     st.markdown(data["qa"])

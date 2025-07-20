@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Any
 from pydantic import BaseModel
 
 class TopicSummary(BaseModel):
@@ -42,3 +42,7 @@ class InterviewState(BaseModel):
     summary_language: Optional[str] = None
 
     channel_and_title: Optional[List[str]] = None
+
+    all_processed_chunks: Optional[List[dict[str, Any]]] = None
+
+    representative_chunks_for_summary: Optional[List[dict[str, Any]]] = None

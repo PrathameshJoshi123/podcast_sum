@@ -1,5 +1,9 @@
-import { useState, useRef, useEffect } from "react";
+import { useContext, useState } from "react";
 import { GlassCard } from "./ui/glass-card";
+// Summary Results Component
+import React from "react";
+import Markdown from "react-markdown";
+
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import {
@@ -14,12 +18,15 @@ import {
   Music,
   Clock,
   FileAudio,
-  Loader2,
-  Play,
-  Square,
   CheckCircle,
   AlertCircle,
+  Loader2,
+  MessageSquare,
+  FileText,
+  Globe,
 } from "lucide-react";
+import { ApiUrlContext, useApiUrl } from "../apiUrl";
+import remarkGfm from "remark-gfm";
 
 interface UploadedFile {
   file: File;
@@ -29,283 +36,185 @@ interface UploadedFile {
   type: string;
 }
 
-interface Summary {
-  title: string;
-  mainPoints: string[];
-  keyInsights: string[];
-  speakers?: string[];
-  duration?: string;
-  timestamp: string;
+interface SummaryData {
+  global_summary?: string;
+  qa?: string;
+  tra?: string;
+  topic_summaries?: Array<{
+    topic: string;
+    summary: string;
+  }>;
+  // qa_pairs?: Array<{
+  //   question: string;
+  //   answer: string;
+  // }>;
 }
 
-interface LiveTranscript {
-  id: string;
-  text: string;
-  timestamp: string;
-  confidence?: number;
+interface ApiError {
+  error: string;
 }
 
 export function UploadSection() {
-  const [activeTab, setActiveTab] = useState<"youtube" | "upload" | "live">("youtube");
+  const API_BASE_URL = useApiUrl();
+  const [activeTab, setActiveTab] = useState<"youtube" | "upload" | "live">(
+    "youtube"
+  );
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
-  
-  // Processing states
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [processingStatus, setProcessingStatus] = useState("");
-  const [summary, setSummary] = useState<Summary | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [summaryData, setSummaryData] = useState<SummaryData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  
-  // Live recording states
-  const [isRecording, setIsRecording] = useState(false);
-  const [liveTranscripts, setLiveTranscripts] = useState<LiveTranscript[]>([]);
-  const [recordingDuration, setRecordingDuration] = useState(0);
-  const [liveSummary, setLiveSummary] = useState<Summary | null>(null);
-  
-  // Refs
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [podcastType, setPodcastType] = useState("interview");
+  const [summaryLanguage, setSummaryLanguage] = useState("English");
 
-  // Helper function to format file size
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  // API Functions
+  const analyzeYouTube = async (
+    url: string,
+    type: string,
+    language: string
+  ): Promise<SummaryData> => {
+    const response = await fetch(`${API_BASE_URL}/summarize/youtube`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        youtube_link: url,
+        podcast_type: type,
+        summary_language: language,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData: ApiError = await response.json();
+      throw new Error(errorData.error || "Failed to analyze YouTube video");
+    }
+
+    return response.json();
   };
 
-  // Helper function to get audio duration
+  const analyzeAudio = async (
+    file: File,
+    type: string,
+    language: string
+  ): Promise<SummaryData> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("podcast_type", type);
+    formData.append("summary_language", language);
+
+    const response = await fetch(`${API_BASE_URL}/summarize/audio`, {
+      method: "POST",
+      // body: formData,
+      body: formData,
+    });
+    console.log("file upload", response)
+    if (!response.ok) {
+      const errorData: ApiError = await response.json();
+      throw new Error(errorData.error || "Failed to analyze audio file");
+    }
+
+    return response.json();
+  };
+
+  const transcribeLive = async (
+    file: File
+  ): Promise<{ transcript: string }> => {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const response = await fetch(`${API_BASE_URL}/transcribe/live`, {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData: ApiError = await response.json();
+      throw new Error(errorData.error || "Failed to transcribe audio");
+    }
+
+    return response.json();
+  };
+
+  // Handler Functions
+  const handleYouTubeAnalysis = async () => {
+    if (!youtubeUrl.trim()) return;
+
+    setIsLoading(true);
+    setError(null);
+    setSummaryData(null);
+
+    try {
+      const data = await analyzeYouTube(
+        youtubeUrl,
+        podcastType,
+        summaryLanguage
+      );
+      setSummaryData(data);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "An unexpected error occurred"
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleAudioAnalysis = async () => {
+    if (!uploadedFile) return;
+
+    setIsLoading(true);
+    setError(null);
+    setSummaryData(null);
+
+    try {
+      const data = await analyzeAudio(
+        uploadedFile.file,
+        podcastType,
+        summaryLanguage
+      );
+      setSummaryData(data);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "An unexpected error occurred"
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Helper functions
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return "0 Bytes";
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  };
+
   const getAudioDuration = (file: File): Promise<string> => {
     return new Promise((resolve) => {
-      const audio = document.createElement('audio');
+      const audio = document.createElement("audio");
       const url = URL.createObjectURL(file);
-      
-      audio.addEventListener('loadedmetadata', () => {
+
+      audio.addEventListener("loadedmetadata", () => {
         const duration = audio.duration;
         const minutes = Math.floor(duration / 60);
         const seconds = Math.floor(duration % 60);
         URL.revokeObjectURL(url);
-        resolve(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+        resolve(`${minutes}:${seconds.toString().padStart(2, "0")}`);
       });
-      
-      audio.addEventListener('error', () => {
+
+      audio.addEventListener("error", () => {
         URL.revokeObjectURL(url);
-        resolve('Unknown');
+        resolve("Unknown");
       });
-      
+
       audio.src = url;
     });
   };
 
-  // Format recording duration
-  const formatDuration = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  // Backend API functions (replace with your actual API endpoints)
-  const processYouTubeUrl = async (url: string): Promise<Summary> => {
-    const response = await fetch('/api/process-youtube', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url }),
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Failed to process YouTube URL: ${response.statusText}`);
-    }
-    
-    return await response.json();
-  };
-
-  const processAudioFile = async (file: File): Promise<Summary> => {
-    const formData = new FormData();
-    formData.append('audio', file);
-    
-    const response = await fetch('/api/process-audio', {
-      method: 'POST',
-      body: formData,
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Failed to process audio file: ${response.statusText}`);
-    }
-    
-    return await response.json();
-  };
-
-  const processLiveTranscripts = async (transcripts: LiveTranscript[]): Promise<Summary> => {
-    const response = await fetch('/api/process-live-transcripts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ transcripts }),
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Failed to process live transcripts: ${response.statusText}`);
-    }
-    
-    return await response.json();
-  };
-
-  // Handle YouTube URL processing
-  const handleYouTubeAnalysis = async () => {
-    if (!youtubeUrl.trim()) return;
-    
-    setIsProcessing(true);
-    setProcessingStatus("Fetching YouTube content...");
-    setError(null);
-    setSummary(null);
-    
-    try {
-      setProcessingStatus("Transcribing audio...");
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate delay
-      
-      setProcessingStatus("Generating summary...");
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate delay
-      
-      const result = await processYouTubeUrl(youtubeUrl);
-      setSummary(result);
-      setProcessingStatus("Analysis complete!");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // Handle file upload processing
-  const handleFileAnalysis = async () => {
-    if (!uploadedFile) return;
-    
-    setIsProcessing(true);
-    setProcessingStatus("Uploading file...");
-    setError(null);
-    setSummary(null);
-    
-    try {
-      setProcessingStatus("Processing audio...");
-      await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate delay
-      
-      setProcessingStatus("Generating summary...");
-      await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate delay
-      
-      const result = await processAudioFile(uploadedFile.file);
-      setSummary(result);
-      setProcessingStatus("Analysis complete!");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // Live recording functions
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      
-      const audioChunks: Blob[] = [];
-      
-      mediaRecorder.ondataavailable = (event) => {
-        audioChunks.push(event.data);
-      };
-      
-      mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-        // Here you would typically send the audio blob to your transcription service
-        console.log('Recording stopped, audio blob created:', audioBlob);
-      };
-      
-      mediaRecorder.start();
-      setIsRecording(true);
-      setRecordingDuration(0);
-      
-      // Start timer
-      recordingTimerRef.current = setInterval(() => {
-        setRecordingDuration(prev => prev + 1);
-      }, 1000);
-      
-      // Simulate real-time transcription
-      simulateRealTimeTranscription();
-      
-    } catch (err) {
-      setError("Failed to access microphone. Please check your permissions.");
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && streamRef.current) {
-      mediaRecorderRef.current.stop();
-      streamRef.current.getTracks().forEach(track => track.stop());
-      
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-      }
-      
-      setIsRecording(false);
-      generateLiveSummary();
-    }
-  };
-
-  // Simulate real-time transcription (replace with actual WebSocket or API calls)
-  const simulateRealTimeTranscription = () => {
-    const sampleTexts = [
-      "Welcome to today's podcast discussion.",
-      "We're talking about the future of artificial intelligence.",
-      "The implications for businesses are quite significant.",
-      "Let's dive into the technical aspects first.",
-      "Machine learning has evolved tremendously over the past decade.",
-    ];
-    
-    let index = 0;
-    const addTranscript = () => {
-      if (index < sampleTexts.length && isRecording) {
-        const newTranscript: LiveTranscript = {
-          id: `transcript-${Date.now()}-${index}`,
-          text: sampleTexts[index],
-          timestamp: new Date().toLocaleTimeString(),
-          confidence: 0.85 + Math.random() * 0.1,
-        };
-        
-        setLiveTranscripts(prev => [...prev, newTranscript]);
-        index++;
-        
-        if (index < sampleTexts.length) {
-          setTimeout(addTranscript, 3000 + Math.random() * 2000);
-        }
-      }
-    };
-    
-    setTimeout(addTranscript, 2000);
-  };
-
-  const generateLiveSummary = async () => {
-    if (liveTranscripts.length === 0) return;
-    
-    setIsProcessing(true);
-    setProcessingStatus("Generating live session summary...");
-    
-    try {
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate processing
-      const result = await processLiveTranscripts(liveTranscripts);
-      setLiveSummary(result);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to generate summary");
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // File upload handlers
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -322,57 +231,54 @@ export function UploadSection() {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
-    
+
     const files = Array.from(e.dataTransfer.files);
     if (files.length > 0) {
       const file = files[0];
-      if (file.type.startsWith('audio/') || 
-          file.name.match(/\.(mp3|wav|m4a|flac|aac|ogg)$/i)) {
+      if (
+        file.type.startsWith("audio/") ||
+        file.name.match(/\.(mp3|wav|m4a|flac|aac|ogg)$/i)
+      ) {
         handleFileUpload(file);
-      } else {
-        setError("Invalid file type. Please upload an audio file.");
       }
     }
   };
 
   const handleFileUpload = async (file: File) => {
-    setError(null);
-    
     const duration = await getAudioDuration(file);
+
     const fileInfo: UploadedFile = {
       file: file,
       name: file.name,
       size: formatFileSize(file.size),
       duration: duration,
-      type: file.type || 'audio/unknown'
+      type: file.type || "audio/unknown",
     };
-    
+
     setUploadedFile(fileInfo);
+    // Clear previous results when new file is uploaded
+    setSummaryData(null);
+    setError(null);
   };
 
   const handleCancelUpload = () => {
     setUploadedFile(null);
-    setSummary(null);
+    setSummaryData(null);
     setError(null);
   };
 
   const triggerFileInput = () => {
-    const fileInput = document.getElementById('file-upload') as HTMLInputElement;
+    const fileInput = document.getElementById(
+      "file-upload"
+    ) as HTMLInputElement;
     fileInput?.click();
   };
 
-  // Reset state when switching tabs
-  const handleTabChange = (newTab: "youtube" | "upload" | "live") => {
-    setActiveTab(newTab);
-    setSummary(null);
-    setLiveSummary(null);
+  const resetAnalysis = () => {
+    setSummaryData(null);
     setError(null);
-    setIsProcessing(false);
-    setLiveTranscripts([]);
-    
-    if (newTab !== "live" && isRecording) {
-      stopRecording();
-    }
+    setYoutubeUrl("");
+    setUploadedFile(null);
   };
 
   const tabs = [
@@ -381,73 +287,9 @@ export function UploadSection() {
     { id: "live", label: "Live Audio", icon: Mic },
   ];
 
-  // Summary Component
-  const SummaryDisplay = ({ summary, title }: { summary: Summary; title: string }) => (
-    <GlassCard variant="glow" className="mt-6 p-6">
-      <div className="space-y-6">
-        <div className="flex items-center gap-3">
-          <CheckCircle className="w-6 h-6 text-green-500" />
-          <h3 className="text-xl font-bold">{title}</h3>
-        </div>
-        
-        <div className="space-y-4">
-          <div>
-            <h4 className="font-semibold text-lg mb-2">{summary.title}</h4>
-            <div className="flex items-center gap-4 text-sm text-muted-foreground">
-              {summary.duration && (
-                <span className="flex items-center gap-1">
-                  <Clock className="w-4 h-4" />
-                  {summary.duration}
-                </span>
-              )}
-              <span>Generated at {summary.timestamp}</span>
-            </div>
-          </div>
-          
-          <div>
-            <h5 className="font-medium mb-2">Key Points:</h5>
-            <ul className="space-y-1 text-muted-foreground">
-              {summary.mainPoints.map((point, index) => (
-                <li key={index} className="flex items-start gap-2">
-                  <span className="w-1.5 h-1.5 bg-primary rounded-full mt-2 flex-shrink-0" />
-                  {point}
-                </li>
-              ))}
-            </ul>
-          </div>
-          
-          <div>
-            <h5 className="font-medium mb-2">Key Insights:</h5>
-            <ul className="space-y-1 text-muted-foreground">
-              {summary.keyInsights.map((insight, index) => (
-                <li key={index} className="flex items-start gap-2">
-                  <span className="w-1.5 h-1.5 bg-secondary rounded-full mt-2 flex-shrink-0" />
-                  {insight}
-                </li>
-              ))}
-            </ul>
-          </div>
-          
-          {summary.speakers && summary.speakers.length > 0 && (
-            <div>
-              <h5 className="font-medium mb-2">Speakers:</h5>
-              <div className="flex flex-wrap gap-2">
-                {summary.speakers.map((speaker, index) => (
-                  <span key={index} className="px-3 py-1 bg-muted/30 rounded-full text-sm">
-                    {speaker}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </GlassCard>
-  );
-
   return (
     <section className="py-24 px-4 sm:px-6 lg:px-8 relative">
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-6xl mx-auto">
         {/* Section Header */}
         <div className="text-center mb-16 space-y-4">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-secondary/10 border border-secondary/20 rounded-full text-sm text-secondary font-medium">
@@ -467,13 +309,52 @@ export function UploadSection() {
           </p>
         </div>
 
+        {/* Show results if available */}
+        {summaryData && (
+          <div className="mb-16">
+            <SummaryResults
+              data={summaryData}
+              onReset={resetAnalysis}
+              activeTab={activeTab}
+            />
+          </div>
+        )}
+
+        {/* Show error if available */}
+        {error && (
+          <div className="mb-8">
+            <GlassCard
+              variant="glow"
+              className="p-6 bg-destructive/5 border-destructive/20"
+            >
+              <div className="flex items-center gap-3">
+                <AlertCircle className="w-6 h-6 text-destructive flex-shrink-0" />
+                <div>
+                  <h3 className="font-semibold text-destructive">
+                    Analysis Failed
+                  </h3>
+                  <p className="text-destructive/80">{error}</p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setError(null)}
+                  className="ml-auto text-destructive hover:bg-destructive/10"
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            </GlassCard>
+          </div>
+        )}
+
         {/* Tab Navigation */}
         <div className="flex justify-center mb-8">
           <div className="inline-flex bg-muted/20 rounded-2xl p-1 backdrop-blur-sm border border-border/20">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => handleTabChange(tab.id as any)}
+                onClick={() => setActiveTab(tab.id as any)}
                 className={`flex items-center gap-2 px-6 py-3 rounded-xl transition-all duration-300 ${
                   activeTab === tab.id
                     ? "bg-gradient-primary text-primary-foreground shadow-lg"
@@ -486,29 +367,6 @@ export function UploadSection() {
             ))}
           </div>
         </div>
-
-        {/* Error Display */}
-        {error && (
-          <GlassCard className="mb-6 p-4 border-red-500/20 bg-red-500/5">
-            <div className="flex items-center gap-3 text-red-400">
-              <AlertCircle className="w-5 h-5 flex-shrink-0" />
-              <p>{error}</p>
-            </div>
-          </GlassCard>
-        )}
-
-        {/* Processing Status */}
-        {isProcessing && (
-          <GlassCard className="mb-6 p-6">
-            <div className="flex items-center gap-3">
-              <Loader2 className="w-6 h-6 animate-spin text-primary" />
-              <div>
-                <p className="font-medium">Processing...</p>
-                <p className="text-sm text-muted-foreground">{processingStatus}</p>
-              </div>
-            </div>
-          </GlassCard>
-        )}
 
         {/* Content Areas */}
         <GlassCard variant="glow" className="p-8">
@@ -524,7 +382,39 @@ export function UploadSection() {
                 </p>
               </div>
 
-              <div className="space-y-4">
+              <div className="space-y-6">
+                {/* Configuration Options */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">
+                      Podcast Type
+                    </label>
+                    <select
+                      value={podcastType}
+                      onChange={(e) => setPodcastType(e.target.value)}
+                      className="w-full h-12 px-3 bg-background/50 border border-border/30 rounded-lg focus:border-primary/50 focus:outline-none"
+                    >
+                      <option value="interview">Interview</option>
+                      <option value="panel">Panel</option>
+                      <option value="monologue">Monologue</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2">
+                      Summary Language
+                    </label>
+                    <select
+                      value={summaryLanguage}
+                      onChange={(e) => setSummaryLanguage(e.target.value)}
+                      className="w-full h-12 px-3 bg-background/50 border border-border/30 rounded-lg focus:border-primary/50 focus:outline-none"
+                    >
+                      <option value="English">English</option>
+                      <option value="Hindi">Hindi</option>
+                      <option value="Marathi">Marathi</option>
+                    </select>
+                  </div>
+                </div>
+
                 <div className="relative">
                   <Link className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                   <Input
@@ -532,18 +422,19 @@ export function UploadSection() {
                     value={youtubeUrl}
                     onChange={(e) => setYoutubeUrl(e.target.value)}
                     className="pl-12 h-14 bg-background/50 border-border/30 focus:border-primary/50"
-                    disabled={isProcessing}
+                    disabled={isLoading}
                   />
                 </div>
+
                 <Button
                   className="w-full h-14 bg-gradient-primary hover:shadow-[0_0_30px_hsl(var(--primary)/0.5)] transition-all duration-300"
-                  disabled={!youtubeUrl.trim() || isProcessing}
+                  disabled={!youtubeUrl.trim() || isLoading}
                   onClick={handleYouTubeAnalysis}
                 >
-                  {isProcessing ? (
+                  {isLoading ? (
                     <>
                       <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                      Processing...
+                      Analyzing...
                     </>
                   ) : (
                     <>
@@ -582,7 +473,9 @@ export function UploadSection() {
                 >
                   <File className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
                   <div className="space-y-2">
-                    <p className="text-lg font-medium">Drop your audio file here</p>
+                    <p className="text-lg font-medium">
+                      Drop your audio file here
+                    </p>
                     <p className="text-muted-foreground">or click to browse</p>
                     <p className="text-sm text-muted-foreground">
                       Max file size: 500MB • Supports MP3, WAV, M4A, FLAC, AAC
@@ -619,11 +512,14 @@ export function UploadSection() {
                       <div className="w-12 h-12 rounded-xl bg-secondary/20 flex items-center justify-center flex-shrink-0">
                         <FileAudio className="w-6 h-6 text-secondary" />
                       </div>
-                      
+
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0 flex-1">
-                            <h4 className="font-semibold text-lg truncate" title={uploadedFile.name}>
+                            <h4
+                              className="font-semibold text-lg truncate"
+                              title={uploadedFile.name}
+                            >
                               {uploadedFile.name}
                             </h4>
                             <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
@@ -631,29 +527,69 @@ export function UploadSection() {
                                 <File className="w-4 h-4" />
                                 {uploadedFile.size}
                               </div>
-                              {uploadedFile.duration && uploadedFile.duration !== 'Unknown' && (
-                                <div className="flex items-center gap-1">
-                                  <Clock className="w-4 h-4" />
-                                  {uploadedFile.duration}
-                                </div>
-                              )}
+                              {uploadedFile.duration &&
+                                uploadedFile.duration !== "Unknown" && (
+                                  <div className="flex items-center gap-1">
+                                    <Clock className="w-4 h-4" />
+                                    {uploadedFile.duration}
+                                  </div>
+                                )}
                               <div className="flex items-center gap-1">
                                 <Music className="w-4 h-4" />
-                                {uploadedFile.type.split('/')[1]?.toUpperCase() || 'AUDIO'}
+                                {uploadedFile.type
+                                  .split("/")[1]
+                                  ?.toUpperCase() || "AUDIO"}
                               </div>
                             </div>
                           </div>
-                          
+
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={handleCancelUpload}
                             className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 flex-shrink-0"
-                            disabled={isProcessing}
+                            disabled={isLoading}
                           >
                             <X className="w-4 h-4" />
                           </Button>
                         </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Configuration Options */}
+                  <div className="bg-muted/10 rounded-2xl p-6 border border-border/20 space-y-4">
+                    <h4 className="text-lg font-semibold mb-4">
+                      Analysis Configuration
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-2">
+                          Podcast Type
+                        </label>
+                        <select
+                          value={podcastType}
+                          onChange={(e) => setPodcastType(e.target.value)}
+                          className="w-full h-12 px-3 bg-background/50 border border-border/30 rounded-lg focus:border-primary/50 focus:outline-none"
+                        >
+                          <option value="interview">Interview</option>
+                          <option value="panel">Panel</option>
+                          <option value="monologue">Monologue</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-2">
+                          Summary Language
+                        </label>
+                        <select
+                          value={summaryLanguage}
+                          onChange={(e) => setSummaryLanguage(e.target.value)}
+                          className="w-full h-12 px-3 bg-background/50 border border-border/30 rounded-lg focus:border-primary/50 focus:outline-none"
+                        >
+                          <option value="English">English</option>
+                          <option value="Hindi">Hindi</option>
+                          <option value="Marathi">Marathi</option>
+                        </select>
                       </div>
                     </div>
                   </div>
@@ -663,21 +599,21 @@ export function UploadSection() {
                       variant="outline"
                       onClick={handleCancelUpload}
                       className="flex-1"
-                      disabled={isProcessing}
+                      disabled={isLoading}
                     >
                       <Upload className="w-4 h-4 mr-2" />
                       Upload Different File
                     </Button>
-                    
+
                     <Button
                       className="flex-1 bg-gradient-secondary hover:shadow-[0_0_30px_hsl(var(--secondary)/0.5)] transition-all duration-300"
-                      onClick={handleFileAnalysis}
-                      disabled={isProcessing}
+                      onClick={handleAudioAnalysis}
+                      disabled={isLoading}
                     >
-                      {isProcessing ? (
+                      {isLoading ? (
                         <>
                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Processing...
+                          Analyzing...
                         </>
                       ) : (
                         <>
@@ -696,7 +632,7 @@ export function UploadSection() {
             <div className="space-y-6 animate-fade-in">
               <div className="text-center space-y-4">
                 <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-accent/20 to-accent/10 flex items-center justify-center mx-auto">
-                  <Mic className={`w-8 h-8 text-accent ${isRecording ? 'animate-pulse' : ''}`} />
+                  <Mic className="w-8 h-8 text-accent animate-glow-pulse" />
                 </div>
                 <h3 className="text-2xl font-bold">Live Transcription</h3>
                 <p className="text-muted-foreground">
@@ -704,71 +640,286 @@ export function UploadSection() {
                 </p>
               </div>
 
-              <div className="bg-muted/20 rounded-2xl p-8 text-center space-y-6">
-                {!isRecording ? (
-                  <>
-                    <div className="text-6xl">🎙️</div>
-                    <p className="text-lg font-medium">Ready to start recording</p>
-                    <p className="text-muted-foreground">
-                      Click the button below to begin live transcription
-                    </p>
-                    <Button 
-                      className="bg-gradient-to-r from-accent to-accent/80 hover:shadow-[0_0_30px_hsl(var(--accent)/0.5)] transition-all duration-300"
-                      onClick={startRecording}
-                      disabled={isProcessing}
-                    >
-                      Start Recording
-                      <Mic className="w-5 h-5 ml-2" />
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <div className="space-y-4">
-                      <div className="text-red-500 text-4xl animate-pulse">🔴</div>
-                      <p className="text-lg font-medium">Recording in progress...</p>
-                      <p className="text-2xl font-mono">{formatDuration(recordingDuration)}</p>
-                    </div>
-                    <Button 
-                      variant="destructive"
-                      className="bg-red-600 hover:bg-red-700"
-                      onClick={stopRecording}
-                    >
-                      <Square className="w-5 h-5 mr-2" />
-                      Stop Recording
-                    </Button>
-                  </>
-                )}
+              <div className="bg-muted/20 rounded-2xl p-8 text-center space-y-4">
+                <div className="text-6xl">🎙️</div>
+                <p className="text-lg font-medium">Ready to start recording</p>
+                <p className="text-muted-foreground">
+                  Click the button below to begin live transcription
+                </p>
+                <Button className="bg-gradient-to-r from-accent to-accent/80 hover:shadow-[0_0_30px_hsl(var(--accent)/0.5)] transition-all duration-300">
+                  Start Recording
+                  <Mic className="w-5 h-5 ml-2" />
+                </Button>
               </div>
-
-              {/* Live Transcripts */}
-              {liveTranscripts.length > 0 && (
-                <div className="space-y-4">
-                  <h4 className="text-lg font-semibold">Live Transcript</h4>
-                  <div className="bg-muted/20 rounded-2xl p-4 max-h-64 overflow-y-auto space-y-3">
-                    {liveTranscripts.map((transcript) => (
-                      <div key={transcript.id} className="flex items-start gap-3">
-                        <span className="text-xs text-muted-foreground bg-muted/30 px-2 py-1 rounded flex-shrink-0">
-                          {transcript.timestamp}
-                        </span>
-                        <p className="text-sm">{transcript.text}</p>
-                        {transcript.confidence && (
-                          <span className="text-xs text-muted-foreground ml-auto">
-                            {Math.round(transcript.confidence * 100)}%
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </GlassCard>
-
-        {/* Display Summaries */}
-        {summary && <SummaryDisplay summary={summary} title="Analysis Complete" />}
-        {liveSummary && <SummaryDisplay summary={liveSummary} title="Live Session Summary" />}
       </div>
     </section>
   );
 }
+
+interface TopicSummary {
+  topic: string;
+  summary: string;
+}
+
+interface QAPair {
+  question: string;
+  answer: string;
+}
+
+interface SummaryData {
+  global_summary?: string;
+  qa?: string;
+  tra?: string;
+  topic_summaries?: TopicSummary[];
+  qa_pairs?: QAPair[];
+}
+
+function SummaryResults({
+  data,
+  onReset,
+  activeTab,
+}: {
+  data: SummaryData;
+  onReset: () => void;
+  activeTab: string;
+}) {
+  // Custom markdown components for consistent styling
+  const markdownComponents = {
+    // Headings
+    h1: ({ children, ...props }) => (
+      <h1
+        className="text-xl font-bold text-primary mt-0 mb-4 flex items-start group"
+        {...props}
+      >
+        <div className="w-2 h-6 bg-gradient-to-b from-primary to-primary/70 rounded-full mr-3 mt-1 flex-shrink-0 group-hover:scale-110 transition-transform"></div>
+        <span className="text-left">{children}</span>
+      </h1>
+    ),
+    h2: ({ children, ...props }) => (
+      <h2
+        className="text-lg font-bold text-primary/90 mt-6 mb-3 flex items-start group"
+        {...props}
+      >
+        <div className="w-1.5 h-5 bg-gradient-to-b from-primary/80 to-primary/50 rounded-full mr-3 mt-1 flex-shrink-0 group-hover:scale-110 transition-transform"></div>
+        <span className="text-left">{children}</span>
+      </h2>
+    ),
+    h3: ({ children, ...props }) => (
+      <h3
+        className="text-base font-semibold text-primary/80 mt-4 mb-2 flex items-start group"
+        {...props}
+      >
+        <div className="w-1 h-4 bg-gradient-to-b from-primary/60 to-primary/40 rounded-full mr-3 mt-1 flex-shrink-0 group-hover:scale-110 transition-transform"></div>
+        <span className="text-left">{children}</span>
+      </h3>
+    ),
+
+    // Paragraphs
+    p: ({ children, ...props }) => (
+      <p
+        className="mb-3 text-muted-foreground leading-relaxed text-sm text-left"
+        {...props}
+      >
+        {children}
+      </p>
+    ),
+
+    // Lists
+    ul: ({ children, ...props }) => (
+      <ul className="my-3 space-y-2" {...props}>
+        {children}
+      </ul>
+    ),
+    ol: ({ children, ...props }) => (
+      <ol className="my-3 space-y-2" {...props}>
+        {children}
+      </ol>
+    ),
+    li: ({ children, ...props }) => (
+      <li
+        className="text-muted-foreground text-sm group flex items-start"
+        {...props}
+      >
+        <div className="w-1.5 h-1.5 bg-primary/60 rounded-full mt-2 mr-3 flex-shrink-0 group-hover:scale-125 transition-transform"></div>
+        <span className="text-left flex-1">{children}</span>
+      </li>
+    ),
+
+    // Code
+    code: ({ inline, className, children, ...props }) => {
+      if (inline) {
+        return (
+          <code
+            className="bg-primary/10 text-primary px-1.5 py-0.5 rounded-md text-xs border border-primary/20 font-mono"
+            {...props}
+          >
+            {children}
+          </code>
+        );
+      }
+      return (
+        <code className="text-primary font-mono text-xs" {...props}>
+          {children}
+        </code>
+      );
+    },
+    pre: ({ children, ...props }) => (
+      <div className="bg-muted/30 border border-primary/10 rounded-lg p-4 my-4 font-mono text-xs backdrop-blur-sm overflow-x-auto">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-xs text-muted-foreground uppercase tracking-wide">
+            Code
+          </span>
+          <div className="flex space-x-1">
+            <div className="w-1.5 h-1.5 bg-red-400 rounded-full"></div>
+            <div className="w-1.5 h-1.5 bg-yellow-400 rounded-full"></div>
+            <div className="w-1.5 h-1.5 bg-green-400 rounded-full"></div>
+          </div>
+        </div>
+        <pre className="text-foreground text-left overflow-x-auto" {...props}>
+          {children}
+        </pre>
+      </div>
+    ),
+
+    // Emphasis
+    strong: ({ children, ...props }) => (
+      <strong
+        className="text-primary font-semibold bg-primary/5 px-1 rounded"
+        {...props}
+      >
+        {children}
+      </strong>
+    ),
+    em: ({ children, ...props }) => (
+      <em className="text-primary/80 italic" {...props}>
+        {children}
+      </em>
+    ),
+
+    // Links
+    a: ({ children, href, ...props }) => (
+      <a
+        href={href}
+        className="text-primary hover:text-primary/80 underline decoration-primary/50 hover:decoration-primary transition-colors break-words"
+        target="_blank"
+        rel="noopener noreferrer"
+        {...props}
+      >
+        {children}
+      </a>
+    ),
+
+    // Blockquotes
+    blockquote: ({ children, ...props }) => (
+      <blockquote
+        className="border-l-4 border-primary/50 pl-4 py-2 my-4 bg-primary/5 rounded-r-lg italic text-muted-foreground"
+        {...props}
+      >
+        {children}
+      </blockquote>
+    ),
+
+    // Horizontal rule
+    hr: ({ ...props }) => (
+      <hr
+        className="my-6 border-0 h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent"
+        {...props}
+      />
+    ),
+
+    // Images
+    img: ({ src, alt, ...props }) => (
+      <img
+        src={src}
+        alt={alt}
+        className="max-w-full h-auto rounded-lg shadow-lg my-3"
+        {...props}
+      />
+    ),
+  };
+
+  const renderMarkdownContent = (content: string) => (
+    <div className="prose prose-neutral dark:prose-invert max-w-none">
+      <Markdown components={markdownComponents} remarkPlugins={[remarkGfm]}>
+        {content}
+      </Markdown>
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <CheckCircle className="w-6 h-6 text-green-500" />
+          <h3 className="text-2xl font-bold">Analysis Complete</h3>
+        </div>
+        <Button
+          variant="outline"
+          onClick={onReset}
+          className="hover:bg-destructive/10 hover:text-destructive"
+        >
+          <X className="w-4 h-4 mr-2" />
+          Clear Results
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6">
+        {/* Global Summary with Markdown */}
+        {data.global_summary && (
+          <GlassCard variant="glow" className="p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center">
+                <Globe className="w-5 h-5 text-primary" />
+              </div>
+              <h4 className="text-xl font-bold">Global Summary</h4>
+            </div>
+            {renderMarkdownContent(data.global_summary)}
+          </GlassCard>
+        )}
+
+        {/* YouTube-specific content */}
+        {activeTab === "youtube" && (
+          <>
+            {data.qa && (
+              <GlassCard variant="glow" className="p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-lg bg-secondary/20 flex items-center justify-center">
+                    <MessageSquare className="w-5 h-5 text-secondary" />
+                  </div>
+                  <h4 className="text-xl font-bold">Q&A Pairs</h4>
+                </div>
+                {renderMarkdownContent(data.qa)}
+              </GlassCard>
+            )}
+
+          </>
+        )}
+
+        {/* Audio file-specific content */}
+        {activeTab === "upload" && (
+          <>
+            {data.qa && (
+              <GlassCard variant="glow" className="p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-lg bg-secondary/20 flex items-center justify-center">
+                    <MessageSquare className="w-5 h-5 text-secondary" />
+                  </div>
+                  <h4 className="text-xl font-bold">Q&A Pairs</h4>
+                </div>
+                {renderMarkdownContent(data.qa)}
+              </GlassCard>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// export default SummaryResults;
+
+export default UploadSection;

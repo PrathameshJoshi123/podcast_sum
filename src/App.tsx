@@ -5,10 +5,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
+import { ApiUrlProvider } from "./apiUrl";
 
 const queryClient = new QueryClient();
-
+const rootApi = "https://beam-peas-neck-than.trycloudflare.com"
 const App = () => (
+  <ApiUrlProvider apiUrl={rootApi}>
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
@@ -22,6 +24,7 @@ const App = () => (
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
+  </ApiUrlProvider>
 );
 
 export default App;

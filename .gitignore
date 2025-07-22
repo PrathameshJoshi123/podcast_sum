@@ -3,3 +3,6 @@ faiss/
 temp_audio/
 transcripts_json/
 __pycache__/
+
+temp_uploads/
+live-frontend/

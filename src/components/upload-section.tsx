@@ -1,5 +1,6 @@
 import { useContext, useState } from "react";
 import { GlassCard } from "./ui/glass-card";
+import LiveTranscription from "./LiveTranscription";
 // Summary Results Component
 import React from "react";
 import Markdown from "react-markdown";
@@ -628,31 +629,7 @@ export function UploadSection() {
             </div>
           )}
 
-          {activeTab === "live" && (
-            <div className="space-y-6 animate-fade-in">
-              <div className="text-center space-y-4">
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-accent/20 to-accent/10 flex items-center justify-center mx-auto">
-                  <Mic className="w-8 h-8 text-accent animate-glow-pulse" />
-                </div>
-                <h3 className="text-2xl font-bold">Live Transcription</h3>
-                <p className="text-muted-foreground">
-                  Start real-time audio transcription for meetings or interviews
-                </p>
-              </div>
-
-              <div className="bg-muted/20 rounded-2xl p-8 text-center space-y-4">
-                <div className="text-6xl">🎙️</div>
-                <p className="text-lg font-medium">Ready to start recording</p>
-                <p className="text-muted-foreground">
-                  Click the button below to begin live transcription
-                </p>
-                <Button className="bg-gradient-to-r from-accent to-accent/80 hover:shadow-[0_0_30px_hsl(var(--accent)/0.5)] transition-all duration-300">
-                  Start Recording
-                  <Mic className="w-5 h-5 ml-2" />
-                </Button>
-              </div>
-            </div>
-          )}
+          {activeTab === "live" && <LiveTranscription/> }
         </GlassCard>
       </div>
     </section>

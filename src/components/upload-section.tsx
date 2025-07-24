@@ -119,25 +119,6 @@ export function UploadSection() {
     return response.json();
   };
 
-  const transcribeLive = async (
-    file: File
-  ): Promise<{ transcript: string }> => {
-    const formData = new FormData();
-    formData.append("file", file);
-
-    const response = await fetch(`${API_BASE_URL}/transcribe/live`, {
-      method: "POST",
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const errorData: ApiError = await response.json();
-      throw new Error(errorData.error || "Failed to transcribe audio");
-    }
-
-    return response.json();
-  };
-
   // Handler Functions
   const handleYouTubeAnalysis = async () => {
     if (!youtubeUrl.trim()) return;

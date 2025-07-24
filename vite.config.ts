@@ -6,7 +6,7 @@ export default defineConfig({
   server: {
     host: true, // so Vite listens to external requests
     allowedHosts: [
-      'police-some-vista-earnings.trycloudflare.com', // your tunnel URL
+      "freeware-april-eng-approach.trycloudflare.com", // your tunnel URL
     ],
     port: 5173, // or whatever port you're using
   },

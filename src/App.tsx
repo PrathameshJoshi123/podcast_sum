@@ -8,7 +8,7 @@ import NotFound from "./pages/NotFound";
 import { ApiUrlProvider } from "./apiUrl";
 
 const queryClient = new QueryClient();
-const rootApi = "https://install-procurement-side-nicaragua.trycloudflare.com"
+const rootApi = "https://extras-substitute-easily-efficient.trycloudflare.com"
 const App = () => (
   <ApiUrlProvider apiUrl={rootApi}>
   <QueryClientProvider client={queryClient}>

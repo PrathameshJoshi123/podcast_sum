@@ -4,7 +4,7 @@ import LiveTranscription from "./LiveTranscription";
 // Summary Results Component
 import React from "react";
 import Markdown from "react-markdown";
-
+import axios from "axios";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import {
@@ -28,7 +28,8 @@ import {
 } from "lucide-react";
 import { ApiUrlContext, useApiUrl } from "../apiUrl";
 import remarkGfm from "remark-gfm";
-
+import DarkVeil from "../utils/DarkVeil";
+import Squares from "../utils/Squares";
 interface UploadedFile {
   file: File;
   name: string;
@@ -69,30 +70,93 @@ export function UploadSection() {
   const [podcastType, setPodcastType] = useState("interview");
   const [summaryLanguage, setSummaryLanguage] = useState("English");
 
-  // API Functions
+  const axiosInstance = axios.create({
+    baseURL: API_BASE_URL,
+    timeout: 6000000, // 2 minutes timeout in milliseconds
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+  // // API Functions
+  // const analyzeYouTube = async (
+  //   url: string,
+  //   type: string,
+  //   language: string
+  // ): Promise<SummaryData> => {
+  //   try {
+  //     const response = await axiosInstance.post("/summarize/youtube", {
+  //       youtube_link: url,
+  //       podcast_type: type,
+  //       summary_language: language,
+  //     });
+
+  //     return response.data;
+  //   } catch (err: any) {
+  //     if (err.response && err.response.data && err.response.data.error) {
+  //       throw new Error(err.response.data.error);
+  //     } else if (err.code === "ECONNABORTED") {
+  //       throw new Error("Request timed out");
+  //     } else {
+  //       throw new Error("Failed to analyze YouTube video");
+  //     }
+  //   }
+  // };
+  const pollForAnswer = (
+    onSuccess: (data: SummaryData) => void,
+    onError: (error: string) => void
+  ) => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await axiosInstance.get("/get_ans");
+
+        if (res.data.msg === "Success") {
+          clearInterval(interval); // stop polling
+          onSuccess(res.data.response); // handle final result
+        } else {
+          console.log("Still processing...");
+        }
+      } catch (err: any) {
+        clearInterval(interval);
+        const msg =
+          err.response?.data?.error ??
+          (err.code === "ECONNABORTED"
+            ? "Polling request timed out"
+            : "Polling failed");
+        onError(msg);
+      }
+    }, 60000); // every 1 minute
+  };
+
   const analyzeYouTube = async (
     url: string,
     type: string,
-    language: string
-  ): Promise<SummaryData> => {
-    const response = await fetch(`${API_BASE_URL}/summarize/youtube`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
+    language: string,
+    onSuccess: (data: SummaryData) => void,
+    onError: (error: string) => void
+  ) => {
+    try {
+      // Step 1: Send initial request
+      const response = await axiosInstance.post("/summarize/youtube", {
         youtube_link: url,
         podcast_type: type,
         summary_language: language,
-      }),
-    });
+      });
 
-    if (!response.ok) {
-      const errorData: ApiError = await response.json();
-      throw new Error(errorData.error || "Failed to analyze YouTube video");
+      if (response.data.msg === "wait") {
+        console.log("Processing started... polling begins");
+
+        // Step 2: Start polling every 1 minute
+        pollForAnswer(onSuccess, onError);
+      }
+    } catch (err: any) {
+      const msg =
+        err.response?.data?.error ??
+        (err.code === "ECONNABORTED"
+          ? "Request timed out"
+          : "Failed to analyze YouTube video");
+      onError(msg);
     }
-
-    return response.json();
   };
 
   const analyzeAudio = async (
@@ -110,7 +174,7 @@ export function UploadSection() {
       // body: formData,
       body: formData,
     });
-    console.log("file upload", response)
+    console.log("file upload", response);
     if (!response.ok) {
       const errorData: ApiError = await response.json();
       throw new Error(errorData.error || "Failed to analyze audio file");
@@ -131,7 +195,15 @@ export function UploadSection() {
       const data = await analyzeYouTube(
         youtubeUrl,
         podcastType,
-        summaryLanguage
+        summaryLanguage,
+        (data) => {
+          console.log("Received summary!", data);
+          setSummaryData(data); // Set in state to render on UI
+        },
+        (error) => {
+          console.error("Error:", error);
+          setError(error);
+        }
       );
       setSummaryData(data);
     } catch (err) {
@@ -270,8 +342,11 @@ export function UploadSection() {
   ];
 
   return (
-    <section className="py-24 px-4 sm:px-6 lg:px-8 relative">
-      <div className="max-w-6xl mx-auto">
+    <section className="py-24 px-4 sm:px-6 lg:px-8 relative overflow-hidden ">
+      <div className="absolute opacity-20 inset-0 z-0 w-full h-full">
+        <Squares />
+      </div>
+      <div className="max-w-6xl mx-auto relative z-10">
         {/* Section Header */}
         <div className="text-center mb-16 space-y-4">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-secondary/10 border border-secondary/20 rounded-full text-sm text-secondary font-medium">
@@ -610,7 +685,7 @@ export function UploadSection() {
             </div>
           )}
 
-          {activeTab === "live" && <LiveTranscription/> }
+          {activeTab === "live" && <LiveTranscription />}
         </GlassCard>
       </div>
     </section>
@@ -853,7 +928,6 @@ function SummaryResults({
                 {renderMarkdownContent(data.qa)}
               </GlassCard>
             )}
-
           </>
         )}
 
